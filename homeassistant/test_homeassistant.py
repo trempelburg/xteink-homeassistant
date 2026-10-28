@@ -478,9 +478,10 @@ L2.execute(open(os.path.join(HERE, 'lockscreen.lua'), encoding='utf-8').read())
 draw2 = L2.eval("function() drawn, commands = {}, 0; on_draw(ctx, gg); local t = {} for _, d in ipairs(drawn) do t[#t + 1] = d.s end return t end")
 n = len(requests)
 t = list(draw2().values())
-for s in ['Home', 'Monday, 27 October', '12:20', 'Kitchen ceili~', 'Front door lo~', 'Unlocked', 'Front door', 'Open', '21.5°C', '20.5°',
-          'updated 5 min ago']:
+for s in ['Home', 'Monday, 27 October', '12:20', 'Kitchen ceili~', '21.5°C', '20.5°', 'updated 5 min ago']:
     assert s in t, (s, t)
+for s in ['Front door lo~', 'Unlocked', 'Front door', 'Open']:   # unlocked and open: in the box, not as tiles
+    assert s not in t, (s, t)
 assert 'Kettle' not in t                                   # pinned tiles only
 alerts = ' / '.join(s for s in t if '(' in s)
 assert 'Front door (Open)' in alerts and 'Front door lock (Unlocked)' in alerts and 'Garage (Open 40%)' in alerts, t
@@ -492,7 +493,7 @@ draw2(); draw2()
 assert len(requests) == n + 1                              # asked once, not on every draw
 answer2()
 t = list(draw2().values())
-assert 'updated 0 min ago' in t and 'Locked' in t and not any('Front door lock (' in s for s in t), t
+assert 'updated 0 min ago' in t and 'Front door lo~' in t and 'Locked' in t and not any('Front door lock (' in s for s in t), t
 
 # no answer while locked (Wi-Fi off): it says so and tries less and less often
 L2.execute("now_sec = now_sec + 11 * 60")

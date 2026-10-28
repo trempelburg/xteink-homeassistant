@@ -88,15 +88,17 @@ function on_draw(c, gg)
     gg:line(24, 92, W - 24, 92)
 
     -- two tiles a row; a row is as tall as its taller tile: a third line (the state's detail or a
-    -- light's brightness) needs 118, the name and the value alone 96
+    -- light's brightness) needs 118, the name and the value alone 96. A tile whose entity is in the
+    -- box below (an unlocked lock, an open door) is left out: the box says it already.
     local tw = 210
-    local list = H.lock_tiles(tiles)
     local shown = {}
-    for k, tl in ipairs(list) do
+    for _k, tl in ipairs(H.lock_tiles(tiles)) do
       local row = cache.rows[tl.id]
-      local v, sub, on = H.shown(row)
-      local bar = H.domain(tl.id) == 'light' and on and tonumber(row.extra)
-      shown[k] = { tile = tl, row = row, v = v, sub = sub, on = on, bar = bar, h = (bar or sub ~= '') and 118 or 96 }
+      if not H.alert(row) then
+        local v, sub, on = H.shown(row)
+        local bar = H.domain(tl.id) == 'light' and on and tonumber(row.extra)
+        shown[#shown + 1] = { tile = tl, row = row, v = v, sub = sub, on = on, bar = bar, h = (bar or sub ~= '') and 118 or 96 }
+      end
     end
     local y = 108
     for k = 1, #shown, 2 do

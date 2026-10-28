@@ -6,6 +6,8 @@
   `lock.open`): a tap offers **Open door** beside Lock / Unlock, and asks "Open the door?" once
   more before sending it. Locks that cannot unlatch are unchanged. The tile learns whether a lock
   can unlatch on its first update after installing 0.5.
+- Lock screen: a tile whose entity is listed in the box below (an unlocked lock, an open door) is
+  no longer shown twice: the tile is left out until it is locked or closed again.
 
 ## 0.4 (2026-10-28)
 

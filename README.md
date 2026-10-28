@@ -146,7 +146,9 @@ Settings → Display the "Off wallpaper" must be **Default**). It shows:
 - up to eight tiles, each row only as tall as its contents need: the ones you pinned (long press → **Pin to lock**, or a `*` in `tiles.txt`),
   or, when none is pinned, the first eight;
 - a box listing every open door or window, water or smoke alarm, unlocked lock and open garage
-  among **all** tiles, or "All doors and windows closed."
+  among **all** tiles, or "All doors and windows closed." A pinned tile that is in this box (an
+  unlocked lock, an open door) is not shown as a tile as well; it comes back once it is closed or
+  locked.
 
 When the states are older than ten minutes the lock screen asks Home Assistant again;
 "updated ... min ago" at the bottom tells you how fresh they are. A sleeping reader usually has
