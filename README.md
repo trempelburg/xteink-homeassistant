@@ -34,7 +34,7 @@ reader's own file browser.
 | cover (blinds, garage door) | open / closed and position | opens the controls | open, stop, close, position in ten steps |
 | switch, fan, input boolean, automation | on / off | toggles | |
 | scene, script, button | | runs / presses | |
-| lock | locked / unlocked | asks, then locks or unlocks | |
+| lock | locked / unlocked | asks, then locks or unlocks; a lock that can unlatch (Nuki) also offers **Open door**, asked once more | |
 | sensor, binary sensor, person, ... | the value with its unit, Open / Closed, Home / Away, ... | shows the details | |
 
 Every tile has an icon for its kind (bulb, thermometer, humidity drop, door, window, lock,

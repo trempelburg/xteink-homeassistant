@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5 (2026-10-28)
+
+- Locks that can unlatch the door (a Nuki, or any lock whose Home Assistant entity supports
+  `lock.open`): a tap offers **Open door** beside Lock / Unlock, and asks "Open the door?" once
+  more before sending it. Locks that cannot unlatch are unchanged. The tile learns whether a lock
+  can unlatch on its first update after installing 0.5.
+
 ## 0.4 (2026-10-28)
 
 - Lock screen: when the states are old because the reader had no Wi-Fi, a crossed-out Wi-Fi sign

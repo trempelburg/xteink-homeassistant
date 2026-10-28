@@ -214,7 +214,7 @@ end
 
 ------------------------------------------------------------------ tiles: tap, info, edit
 
-local SVC_WORD = { open_cover = 'Open', close_cover = 'Close', unlock = 'Unlock', lock = 'Lock' }
+local SVC_WORD = { open_cover = 'Open', close_cover = 'Close', unlock = 'Unlock', lock = 'Lock', open = 'Open' }
 
 local edit_tile
 
@@ -228,9 +228,18 @@ local function run(i)
     local f = H.flipped(row)
     call(t.id, svc, nil, kit.short(H.label(t, row), 24) .. '...', f and function() cache.rows[t.id] = f end)
   end
+  -- a lock that can unlatch (a Nuki): Open door, then asked once more, as it opens the door itself
+  local function open_door()
+    kit.show({ title = 'Open the door?', lines = { H.label(t, row) .. ' unlatches: the door', 'can be pushed open.' }, cancel = kit.close,
+               rows = { { { 'Open', function() kit.close(); call(t.id, 'open', nil, 'Opening ' .. kit.short(H.label(t, row), 20) .. '...') end },
+                          { 'Cancel', kit.close } } } })
+  end
   if ask then
     local word = SVC_WORD[svc] or svc
-    kit.show({ title = word .. ' ' .. H.label(t, row) .. '?', rows = { { { word, go }, { 'Cancel', kit.close } } }, cancel = kit.close })
+    local rows = { { { word, go }, { 'Cancel', kit.close } } }
+    local title = word .. ' ' .. H.label(t, row) .. '?'
+    if H.can_open(row) then table.insert(rows, 1, { { 'Open door', open_door } }); title = H.label(t, row) end
+    kit.show({ title = title, rows = rows, cancel = kit.close })
   else go() end
 end
 

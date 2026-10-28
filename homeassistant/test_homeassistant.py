@@ -23,7 +23,7 @@ DB = {
     'switch.kitchen_kettle': ['off', {'friendly_name': 'Kettle'}],
     'sensor.kitchen_temperature': ['21.46', {'friendly_name': 'Kitchen temperature', 'unit_of_measurement': '°C', 'device_class': 'temperature'}],
     'binary_sensor.front_door': ['on', {'friendly_name': 'Front door', 'device_class': 'door'}],
-    'lock.front_door': ['locked', {'friendly_name': 'Front door lock'}],
+    'lock.front_door': ['locked', {'friendly_name': 'Front door lock', 'supported_features': 1}],
     'climate.living_room': ['heat', {'friendly_name': 'Living room', 'current_temperature': 20.5, 'temperature': 21,
                                      'hvac_modes': ['off', 'heat', 'heat_cool', 'auto'], 'target_temp_step': 0.5,
                                      'hvac_action': 'heating', 'current_humidity': 45, 'min_temp': 7, 'max_temp': 30,
@@ -112,9 +112,9 @@ def answer(o):
         elif svc == 'set_preset_mode': a['preset_mode'] = data['preset_mode']
         elif svc == 'set_fan_mode': a['fan_mode'] = data['fan_mode']
         elif svc == 'set_cover_position': a['current_position'] = data['position']; DB[eid][0] = 'open' if data['position'] else 'closed'
-        if svc not in ('toggle', 'unlock', 'lock', 'open_cover', 'close_cover'):
+        if svc not in ('toggle', 'unlock', 'lock', 'open', 'open_cover', 'close_cover'):
             return {'status': 200, 'body': json.dumps([state_json(eid)] if mode['echo'] else [])}
-        new = {'toggle': {'on': 'off', 'off': 'on'}.get(DB[eid][0]), 'unlock': 'unlocked', 'lock': 'locked',
+        new = {'toggle': {'on': 'off', 'off': 'on'}.get(DB[eid][0]), 'unlock': 'unlocked', 'lock': 'locked', 'open': 'open',
                'open_cover': 'open', 'close_cover': 'closed'}.get(svc)
         if new:
             DB[eid][0] = new
@@ -193,6 +193,8 @@ assert '*light.kitchen = Light\nsensor.power\nswitch.x\n' in H.tiles_text(tl)
 assert H.number('21.46', '°C') == '21.5°C' and H.number('1234.56', 'W') == '1235 W' and H.number('3.0', '') == '3'
 assert H.base(' 192.168.1.20:8123/ ') == 'http://192.168.1.20:8123' and H.base('https://x.ui.nabu.casa') == 'https://x.ui.nabu.casa'
 assert json.loads(H.json_str('a"b\\c\nd\x01')) == 'a"b\\c\nd\x01'
+lk = lambda st, ex: H.can_open(g.L.table_from({'id': 'lock.x', 'state': st, 'extra': ex}))
+assert lk('locked', '1') and not lk('locked', '0') and not lk('locked', '') and not lk('unavailable', '1')
 
 # ---- setup: nothing yet, so the setup screen; a connection test
 assert str(A().screen()) == 'setup' and requests == []
@@ -278,11 +280,21 @@ mode['fail'] = False
 n = len(requests)
 x, y = tile_xy(ids.index('lock.front_door') + 1)
 g.tap(x, y)
-assert 'Unlock Front door lock?' in g.texts() and len(requests) == n
+assert 'Unlock' in g.texts() and 'Open door' in g.texts() and len(requests) == n
 g.tap_label('Cancel'); assert len(requests) == n
 g.tap(x, y); g.tap_label('Unlock')
 assert requests[-1]['url'].endswith('/api/services/lock/unlock'); answer_now()
 assert tile('lock.front_door')[1] == 'Unlocked'
+g.tap(x, y)                                                # a Nuki also unlatches, after asking again
+assert 'Front door lock' in g.texts() and 'Lock' in g.texts() and 'Open door' in g.texts()
+g.tap_label('Open door')
+assert 'Open the door?' in g.texts() and len(requests) == n + 1
+g.tap_label('Cancel'); assert len(requests) == n + 1
+g.tap(x, y); g.tap_label('Open door'); g.tap_label('Open')
+assert requests[-1]['url'].endswith('/api/services/lock/open') and body() == {'entity_id': 'lock.front_door'}; answer_now()
+assert tile('lock.front_door')[1] == 'Open'
+DB['lock.front_door'][0] = 'unlocked'                      # a Nuki latches again, unlocked
+g.tap_label('Refresh'); answer_now()
 x, y = tile_xy(ids.index('cover.garage') + 1)
 g.tap(x, y); assert str(A().screen()) == 'sheet'; answer_now()
 g.tap_label('Open')

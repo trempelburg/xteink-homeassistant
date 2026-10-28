@@ -551,7 +551,7 @@ end
 
 -- one line per entity: id|state|unit|name|device class|extra (by domain: a thermostat's
 -- "current;target;action", the target "21" or a range "18~24"; a light's brightness %; a cover's
--- position; the media title)
+-- position; the media title; a lock's supported features)
 local ROW = "{{ e }}|{{ states(e)|replace('|','/')|replace('\\n',' ') }}|{{ state_attr(e,'unit_of_measurement') or '' }}|" ..
   "{{ (state_attr(e,'friendly_name') or e)|replace('|','/')|replace('\\n',' ') }}|{{ state_attr(e,'device_class') or '' }}|" ..
   "{% set d = e.split('.')[0] %}{% if d == 'climate' %}{{ state_attr(e,'current_temperature') if state_attr(e,'current_temperature') is not none else '' }};" ..
@@ -560,6 +560,7 @@ local ROW = "{{ e }}|{{ states(e)|replace('|','/')|replace('\\n',' ') }}|{{ stat
   "{{ state_attr(e,'hvac_action') or '' }}" ..
   "{% elif d == 'light' and state_attr(e,'brightness') %}{{ (state_attr(e,'brightness') / 2.55)|round|int }}" ..
   "{% elif d == 'cover' and state_attr(e,'current_position') is not none %}{{ state_attr(e,'current_position') }}" ..
+  "{% elif d == 'lock' %}{{ state_attr(e,'supported_features') or 0 }}" ..
   "{% elif d == 'media_player' %}{{ (state_attr(e,'media_title') or '')|replace('|','/')|replace('\\n',' ') }}{% endif %}\n"
 
 function H.template(ids)
@@ -662,6 +663,13 @@ H.MP = { PAUSE = 1, VOLUME_SET = 4, VOLUME_MUTE = 8, PREVIOUS = 16, NEXT = 32, T
          VOLUME_STEP = 1024, SELECT_SOURCE = 2048, STOP = 4096, PLAY = 16384 }
 -- cover features (CoverEntityFeature)
 H.CV = { OPEN = 1, CLOSE = 2, SET_POSITION = 4, STOP = 8 }
+-- lock features (LockEntityFeature): OPEN is unlatching (lock.open), as a Nuki does
+H.LK = { OPEN = 1 }
+
+-- whether a lock row can unlatch the door (a cache from before 0.5 does not say: no)
+function H.can_open(row)
+  return row ~= nil and H.domain(row.id) == 'lock' and row.state ~= 'unavailable' and H.has(tonumber(row.extra), H.LK.OPEN)
+end
 
 -- the template's lines -> { [id] = row } and the ids in order
 function H.parse_rows(body)
@@ -687,7 +695,8 @@ function H.row_from_state(d)
     extra = (H.num(a.current_temperature) and tostring(a.current_temperature) or '') .. ';' .. t .. ';' .. (H.str(a.hvac_action) or '')
   elseif dom == 'light' and tonumber(a.brightness) then extra = tostring(math.floor(tonumber(a.brightness) / 2.55 + 0.5))
   elseif dom == 'cover' and tonumber(a.current_position) then extra = tostring(a.current_position)
-  elseif dom == 'media_player' and a.media_title then extra = tostring(a.media_title) end
+  elseif dom == 'media_player' and a.media_title then extra = tostring(a.media_title)
+  elseif dom == 'lock' then extra = tostring(math.floor(H.num(a.supported_features) or 0)) end
   local function clean(v) return (tostring(v or ''):gsub('[|\n]', ' ')) end
   return { id = d.entity_id, state = clean(d.state), unit = clean(a.unit_of_measurement), name = clean(a.friendly_name or d.entity_id),
            class = clean(a.device_class), extra = clean(extra) }
@@ -1052,7 +1061,7 @@ end
 
 ------------------------------------------------------------------ tiles: tap, info, edit
 
-local SVC_WORD = { open_cover = 'Open', close_cover = 'Close', unlock = 'Unlock', lock = 'Lock' }
+local SVC_WORD = { open_cover = 'Open', close_cover = 'Close', unlock = 'Unlock', lock = 'Lock', open = 'Open' }
 
 local edit_tile
 
@@ -1066,9 +1075,18 @@ local function run(i)
     local f = H.flipped(row)
     call(t.id, svc, nil, kit.short(H.label(t, row), 24) .. '...', f and function() cache.rows[t.id] = f end)
   end
+  -- a lock that can unlatch (a Nuki): Open door, then asked once more, as it opens the door itself
+  local function open_door()
+    kit.show({ title = 'Open the door?', lines = { H.label(t, row) .. ' unlatches: the door', 'can be pushed open.' }, cancel = kit.close,
+               rows = { { { 'Open', function() kit.close(); call(t.id, 'open', nil, 'Opening ' .. kit.short(H.label(t, row), 20) .. '...') end },
+                          { 'Cancel', kit.close } } } })
+  end
   if ask then
     local word = SVC_WORD[svc] or svc
-    kit.show({ title = word .. ' ' .. H.label(t, row) .. '?', rows = { { { word, go }, { 'Cancel', kit.close } } }, cancel = kit.close })
+    local rows = { { { word, go }, { 'Cancel', kit.close } } }
+    local title = word .. ' ' .. H.label(t, row) .. '?'
+    if H.can_open(row) then table.insert(rows, 1, { { 'Open door', open_door } }); title = H.label(t, row) end
+    kit.show({ title = title, rows = rows, cancel = kit.close })
   else go() end
 end
 
