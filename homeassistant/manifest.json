@@ -1,7 +1,7 @@
 {
   "app_id": "homeassistant",
   "display_name": "Home Assistant",
-  "version": "0.2",
+  "version": "0.3",
   "author": "trempelburg",
   "description": "A panel of Home Assistant tiles: sensors at a glance, lights, switches, scenes, covers and locks a tap away; the pinned tiles can be the lock screen.",
   "entry": "index.lua",

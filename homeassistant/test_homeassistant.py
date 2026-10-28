@@ -25,7 +25,10 @@ DB = {
     'binary_sensor.front_door': ['on', {'friendly_name': 'Front door', 'device_class': 'door'}],
     'lock.front_door': ['locked', {'friendly_name': 'Front door lock'}],
     'climate.living_room': ['heat', {'friendly_name': 'Living room', 'current_temperature': 20.5, 'temperature': 21,
-                                     'hvac_modes': ['off', 'heat', 'auto'], 'target_temp_step': 0.5}],
+                                     'hvac_modes': ['off', 'heat', 'heat_cool', 'auto'], 'target_temp_step': 0.5,
+                                     'hvac_action': 'heating', 'current_humidity': 45, 'min_temp': 7, 'max_temp': 30,
+                                     'preset_modes': ['none', 'eco', 'comfort', 'away', 'boost'], 'preset_mode': 'comfort',
+                                     'fan_modes': ['auto', 'low', 'high'], 'fan_mode': 'auto'}],
     'scene.movie_night': ['2025-10-26T20:00:00+00:00', {'friendly_name': 'Movie night'}],
     'cover.garage': ['closed', {'friendly_name': 'Garage', 'device_class': 'garage', 'current_position': 0, 'supported_features': 15}],
     'media_player.kitchen_speaker': ['playing', {'friendly_name': 'Kitchen | speaker', 'media_title': 'Song\nTwo', 'media_artist': 'Band',
@@ -97,8 +100,17 @@ def answer(o):
         elif svc == 'select_source': a['source'] = data['source']
         elif svc in ('media_next_track', 'media_previous_track'): a['media_title'] = svc
         elif svc == 'media_play_pause': DB[eid][0] = 'paused' if DB[eid][0] == 'playing' else 'playing'
-        elif svc == 'set_temperature': a['temperature'] = data['temperature']
-        elif svc == 'set_hvac_mode': DB[eid][0] = data['hvac_mode']
+        elif svc == 'set_temperature':
+            for k in ('temperature', 'target_temp_low', 'target_temp_high'):
+                if k in data: a[k] = data[k]
+        elif svc == 'set_hvac_mode':
+            DB[eid][0] = data['hvac_mode']
+            if data['hvac_mode'] == 'heat_cool':            # as Home Assistant does: a range instead of one target
+                a.update(temperature=None, target_temp_low=19, target_temp_high=24, hvac_action='idle')
+            elif data['hvac_mode'] == 'off':
+                a.update(hvac_action='off')
+        elif svc == 'set_preset_mode': a['preset_mode'] = data['preset_mode']
+        elif svc == 'set_fan_mode': a['fan_mode'] = data['fan_mode']
         elif svc == 'set_cover_position': a['current_position'] = data['position']; DB[eid][0] = 'open' if data['position'] else 'closed'
         if svc not in ('toggle', 'unlock', 'lock', 'open_cover', 'close_cover'):
             return {'status': 200, 'body': json.dumps([state_json(eid)] if mode['echo'] else [])}
@@ -231,7 +243,7 @@ assert tile('switch.kitchen_kettle') == ['Kettle', 'Off'], tile('switch.kitchen_
 assert tile('sensor.kitchen_temperature')[1] == '21.5°C', tile('sensor.kitchen_temperature')
 assert tile('media_player.kitchen_speaker')[0].startswith('Kitchen') and tile('media_player.kitchen_speaker')[1:] == ['Playing', 'Song Two'], tile('media_player.kitchen_speaker')
 assert tile('binary_sensor.front_door')[1] == 'Open' and tile('lock.front_door')[1] == 'Locked'
-assert tile('climate.living_room') == ['Living room', '20.5°', 'Heat'], tile('climate.living_room')
+assert tile('climate.living_room') == ['Living room', '20.5°', 'Heating to 21°'], tile('climate.living_room')
 assert tile('scene.movie_night')[1] == 'Run' and tile('cover.garage')[1] == 'Closed'
 assert '1235 W' in g.texts()
 # 10 a page: the 11th and 12th on page 2
@@ -339,9 +351,36 @@ hit('back')
 
 # ---- a thermostat: target and mode
 g.tap(*tile_xy(ids.index('climate.living_room') + 1)); answer_now()
-assert '21°' in g.texts() and 'Heat' in g.texts(), g.texts()
+t = g.texts()
+for s in ['Living room', '20.5° now · Heating · 45% humidity', 'Target', '21°', 'Mode', 'Heat', 'Heat cool',
+          'Preset', 'Eco', 'Comfort', 'Boost', 'Fan', 'Low']:
+    assert s in t, (s, t)
 hit('temp+'); assert body() == {'entity_id': 'climate.living_room', 'temperature': 21.5}; answer_now()
 assert '21.5°' in g.texts()
+for _ in range(20):                                          # never past max_temp
+    hit('temp+'); answer_now()
+assert DB['climate.living_room'][1]['temperature'] == 30
+hit('temp-'); answer_now(); assert DB['climate.living_room'][1]['temperature'] == 29.5
+hit('preset:eco'); assert body() == {'entity_id': 'climate.living_room', 'preset_mode': 'eco'}
+assert 'preset:eco' in [str(h.id) for h in A().hits().values()]; answer_now()
+hit('fan:high'); assert body() == {'entity_id': 'climate.living_room', 'fan_mode': 'high'}; answer_now()
+assert 'High' in g.texts() and 'Fan' in g.texts()
+# heat_cool: a range instead of one target; both ends are sent together and never cross
+hit('heat_cool'); assert body() == {'entity_id': 'climate.living_room', 'hvac_mode': 'heat_cool'}; answer_now()
+t = g.texts()
+assert 'Target range' in t and 'Heat to' in t and 'Cool to' in t and '19°' in t and '24°' in t and 'Target' not in t, t
+hit('low+'); assert body() == {'entity_id': 'climate.living_room', 'target_temp_low': 19.5, 'target_temp_high': 24}; answer_now()
+hit('high-'); assert body() == {'entity_id': 'climate.living_room', 'target_temp_low': 19.5, 'target_temp_high': 23.5}; answer_now()
+n = len(requests)
+DB['climate.living_room'][1].update(target_temp_low=23, target_temp_high=23.5)
+hit('back'); g.tap(*tile_xy(ids.index('climate.living_room') + 1)); answer_now()
+hit('low+'); assert len(requests) == n + 1                  # 23.5 - 23.5: not sent
+assert g.commands() < 500, g.commands()
+hit('back')
+assert tile('climate.living_room')[:2] == ['Living room', '20.5°'] and tile('climate.living_room')[2].startswith('Heat cool · 23-2'), tile('climate.living_room')
+assert A().H.climate_extra('20.5;23~23.5;idle') == ('20.5', '23-23.5°', 'idle')
+assert A().H.climate_extra('20.5') == ('20.5', None, '')                 # a cache from 0.2
+g.tap(*tile_xy(ids.index('climate.living_room') + 1)); answer_now()
 hit('auto'); assert body() == {'entity_id': 'climate.living_room', 'hvac_mode': 'auto'}; answer_now()
 hit('back')
 g.no_err()

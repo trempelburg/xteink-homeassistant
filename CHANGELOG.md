@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3 (2026-10-28)
+
+- Thermostats: the tile shows what the thermostat is doing and its target ("Heating to 21°",
+  "Heat cool · 19-24°"). The controls add the heat/cool range (Heat to / Cool to, sent together,
+  never crossing), presets, fan modes and the current humidity, and keep the target within the
+  thermostat's minimum and maximum.
+
 ## 0.2 (2026-10-28)
 
 - New look: rounded tiles with an icon for each kind of entity, a real on/off switch on lights

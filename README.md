@@ -30,7 +30,7 @@ reader's own file browser.
 |---|---|---|---|
 | light | on / off, brightness bar | the switch toggles; the rest opens the controls | brightness in ten steps, − / Night / Max / +, warmth (Warm, Soft, Neutral, Daylight), eight colours, as far as the light supports them |
 | media player (smart speaker, TV) | state, what is playing | the button plays / pauses; the rest opens the controls | previous / play-pause / next, volume in ten steps and − / +, mute, source (Spotify, TV, ...), on / off, as far as the player supports them |
-| climate (thermostat) | current temperature, mode | opens the controls | target temperature − / +, the modes (heat, cool, auto, off, ...) |
+| climate (thermostat, radiator valve, air conditioner) | current temperature; heating / cooling and the target | opens the controls | target temperature − / + (or the low and high ends of a heat/cool range), the modes (heat, cool, heat/cool, auto, off, ...), presets (eco, comfort, away, boost, ...), fan modes; current humidity |
 | cover (blinds, garage door) | open / closed and position | opens the controls | open, stop, close, position in ten steps |
 | switch, fan, input boolean, automation | on / off | toggles | |
 | scene, script, button | | runs / presses | |
@@ -124,6 +124,16 @@ are not lost: the latest one is sent as soon as the one before is done.
 
 Only the controls an entity supports are shown or active: a plain on/off bulb has no brightness, a
 speaker that cannot be switched off has no Turn off.
+
+**Thermostats.** The tile shows the room temperature and, below it, what the thermostat is doing:
+"Heating to 21°", or the mode and target ("Heat · 21°", "Heat cool · 19-24°") while it waits. Its
+controls show the target with − / + in the thermostat's own steps (usually 0.5°), never past its
+minimum and maximum. In heat/cool (or auto) mode a thermostat has two targets: **Heat to** and
+**Cool to** are set separately and are always sent together, as Home Assistant needs; they cannot
+cross. Below come the modes, the presets (Eco, Comfort, Away, Boost, as your thermostat names them)
+and the fan modes of an air conditioner; the active one has a heavy frame.
+
+![A thermostat: the tile, the controls with one target, and in heat/cool mode with a range](docs/thermostat.png)
 
 ## The lock screen
 
@@ -249,7 +259,7 @@ ghost on e-ink.
 - **Firmware-bound.** Packages are encrypted for a key that XTOS Licorice carries; it worked on
   build 26102301 (October 2026). If an update rotates the key, packages stop installing until
   rebuilt (`python build.py --image <app image>`, see `xtpack.py`).
-- **Tested so far:** version 0.1 on an X4 Pro; version 0.2 (the new design and the controls) only
+- **Tested so far:** version 0.1 on an X4 Pro; versions 0.2 and 0.3 (the new design, the controls, thermostats) only
   with the offline tests. Other Xteink models are untested.
 - **Network.** The app talks only to the address you enter.
 

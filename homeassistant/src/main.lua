@@ -660,41 +660,93 @@ local function draw_media(gg)
   end
 end
 
+-- a grid of choice buttons, four a row, the current one heavy; returns the y below it
+local function choices(gg, y, list, cur, prefix, pick)
+  local bw = (W - 40 - 3 * 8) // 4
+  local n = math.min(8, #list)
+  for k = 1, n do
+    local v = tostring(list[k])
+    local bx, by = 20 + ((k - 1) % 4) * (bw + 8), y + ((k - 1) // 4) * 58
+    D.button(gg, bx, by, bw, 50, cap(v), { sel = v == cur, font = 'small' })
+    hit(bx, by, bw, 50, prefix .. v, function() pick(v) end)
+  end
+  return y + ((n + 3) // 4) * 58
+end
+
 local function draw_climate(gg)
   local a, st = attrs(), sheet_state()
   local id = sheet.id
   local cur, target = H.num(a.current_temperature), H.num(a.temperature)
+  local lo, hi = H.num(a.target_temp_low), H.num(a.target_temp_high)
   local stepv = H.num(a.target_temp_step) or 0.5
+  local tmin, tmax = H.num(a.min_temp) or 5, H.num(a.max_temp) or 35
+  local function clamp(v) return math.max(tmin, math.min(tmax, v)) end
+  local fans = type(a.fan_modes) == 'table' and a.fan_modes or {}
+  local action = H.str(a.hvac_action)
   D.icon(gg, 'thermo', 20, 106, 52, st ~= 'off')
   D.text(gg, 90, 108, D.fit(name(), 'large', W - 110), 'large')
-  D.text(gg, 90, 144, (cur and (H.number(cur, '°') .. ' now  ·  ') or '') .. cap(H.str(a.hvac_action) or st), 'small')
+  local facts = {}
+  if cur then facts[#facts + 1] = H.number(cur, '°') .. ' now' end
+  facts[#facts + 1] = cap(action or st)
+  if H.num(a.current_humidity) then facts[#facts + 1] = H.number(a.current_humidity, '') .. '% humidity' end
+  D.text(gg, 90, 144, D.fit(table.concat(facts, ' · '), 'small', W - 110), 'small')
+  local y = 190
   if target then
-    local cy = 270
-    section(gg, 196, 'Target')
-    D.round(gg, 90, cy, 44, 'minus')
+    -- one target temperature
+    local cy = y + 76
+    section(gg, y, 'Target')
+    D.round(gg, 90, cy, 40, 'minus')
     D.text_c(gg, W / 2, cy - 18, H.number(target, '°'), 'large')
-    D.round(gg, W - 90, cy, 44, 'plus')
+    D.round(gg, W - 90, cy, 40, 'plus')
     local function set(v)
-      local lo, hi = H.num(a.min_temp) or 5, H.num(a.max_temp) or 35
-      v = math.max(lo, math.min(hi, v))
+      v = clamp(v)
       call(id, 'set_temperature', { temperature = v }, 'Target ' .. H.number(v, '°') .. '...', guess(function(_d, aa) aa.temperature = v end))
     end
-    hit(36, cy - 50, 110, 100, 'temp-', function() set(target - stepv) end)
-    hit(W - 146, cy - 50, 110, 100, 'temp+', function() set(target + stepv) end)
+    hit(36, cy - 46, 110, 92, 'temp-', function() set(target - stepv) end)
+    hit(W - 146, cy - 46, 110, 92, 'temp+', function() set(target + stepv) end)
+    y = cy + 60
+  elseif lo and hi then
+    -- a range (heat_cool / auto): heat below the low one, cool above the high one; both go together
+    section(gg, y, 'Target range')
+    local function set(l, h)
+      l, h = clamp(l), clamp(h)
+      if h - l < stepv then return end
+      call(id, 'set_temperature', { target_temp_low = l, target_temp_high = h },
+           'Range ' .. H.number(l, '') .. '-' .. H.number(h, '°') .. '...',
+           guess(function(_d, aa) aa.target_temp_low = l; aa.target_temp_high = h end))
+    end
+    local rows = { { 'Heat to', lo, 'low', function(d) set(lo + d, hi) end },
+                   { 'Cool to', hi, 'high', function(d) set(lo, hi + d) end } }
+    for k, r in ipairs(rows) do
+      local cy = y + 66 + (k - 1) * 76
+      D.text(gg, 20, cy - 12, r[1], 'medium')
+      D.round(gg, W - 210, cy, 30, 'minus')
+      D.text_c(gg, W - 130, cy - 15, H.number(r[2], '°'), 'large')
+      D.round(gg, W - 50, cy, 30, 'plus')
+      hit(W - 250, cy - 36, 80, 72, r[3] .. '-', function() r[4](-stepv) end)
+      hit(W - 90, cy - 36, 80, 72, r[3] .. '+', function() r[4](stepv) end)
+    end
+    y = y + 66 + 76 + 40
   end
   local modes = type(a.hvac_modes) == 'table' and a.hvac_modes or {}
   if #modes > 0 then
-    section(gg, 350, 'Mode')
-    local bw = (W - 40 - 2 * 8) // 3
-    for k, md in ipairs(modes) do
-      if k > 6 then break end
-      local mode = tostring(md)
-      local bx, by = 20 + ((k - 1) % 3) * (bw + 8), 386 + ((k - 1) // 3) * 64
-      D.button(gg, bx, by, bw, 56, cap(mode), { sel = mode == st, font = 'small' })
-      hit(bx, by, bw, 56, mode, function()
-        call(id, 'set_hvac_mode', { hvac_mode = mode }, cap(mode) .. '...', guess(function(d) d.state = mode end))
-      end)
-    end
+    section(gg, y, 'Mode')
+    y = choices(gg, y + 34, modes, st, '', function(mode)
+      call(id, 'set_hvac_mode', { hvac_mode = mode }, cap(mode) .. '...', guess(function(d) d.state = mode end))
+    end) + 14
+  end
+  local presets = type(a.preset_modes) == 'table' and a.preset_modes or {}
+  if #presets > 0 then
+    section(gg, y, 'Preset')
+    y = choices(gg, y + 34, presets, H.str(a.preset_mode), 'preset:', function(p)
+      call(id, 'set_preset_mode', { preset_mode = p }, cap(p) .. '...', guess(function(_d, aa) aa.preset_mode = p end))
+    end) + 14
+  end
+  if #fans > 0 then
+    section(gg, y, 'Fan')
+    choices(gg, y + 34, fans, H.str(a.fan_mode), 'fan:', function(fm)
+      call(id, 'set_fan_mode', { fan_mode = fm }, 'Fan ' .. fm .. '...', guess(function(_d, aa) aa.fan_mode = fm end))
+    end)
   end
 end
 

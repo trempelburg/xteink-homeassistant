@@ -86,11 +86,15 @@ local function headers(token)
            ['Accept'] = 'application/json, text/plain' }
 end
 
--- one line per entity: id|state|unit|name|device class|extra (current temperature, brightness %,
--- cover position or the media title, by domain)
+-- one line per entity: id|state|unit|name|device class|extra (by domain: a thermostat's
+-- "current;target;action", the target "21" or a range "18~24"; a light's brightness %; a cover's
+-- position; the media title)
 local ROW = "{{ e }}|{{ states(e)|replace('|','/')|replace('\\n',' ') }}|{{ state_attr(e,'unit_of_measurement') or '' }}|" ..
   "{{ (state_attr(e,'friendly_name') or e)|replace('|','/')|replace('\\n',' ') }}|{{ state_attr(e,'device_class') or '' }}|" ..
-  "{% set d = e.split('.')[0] %}{% if d == 'climate' %}{{ state_attr(e,'current_temperature') if state_attr(e,'current_temperature') is not none else '' }}" ..
+  "{% set d = e.split('.')[0] %}{% if d == 'climate' %}{{ state_attr(e,'current_temperature') if state_attr(e,'current_temperature') is not none else '' }};" ..
+  "{% if state_attr(e,'temperature') is not none %}{{ state_attr(e,'temperature') }}" ..
+  "{% elif state_attr(e,'target_temp_low') is not none %}{{ state_attr(e,'target_temp_low') }}~{{ state_attr(e,'target_temp_high') }}{% endif %};" ..
+  "{{ state_attr(e,'hvac_action') or '' }}" ..
   "{% elif d == 'light' and state_attr(e,'brightness') %}{{ (state_attr(e,'brightness') / 2.55)|round|int }}" ..
   "{% elif d == 'cover' and state_attr(e,'current_position') is not none %}{{ state_attr(e,'current_position') }}" ..
   "{% elif d == 'media_player' %}{{ (state_attr(e,'media_title') or '')|replace('|','/')|replace('\\n',' ') }}{% endif %}\n"
@@ -214,7 +218,10 @@ function H.row_from_state(d)
   if type(d) ~= 'table' or not H.valid_id(d.entity_id) then return nil end
   local a = type(d.attributes) == 'table' and d.attributes or {}
   local dom, extra = H.domain(d.entity_id), ''
-  if dom == 'climate' and tonumber(a.current_temperature) then extra = tostring(a.current_temperature)
+  if dom == 'climate' then
+    local t = H.num(a.temperature) and tostring(a.temperature)
+      or (H.num(a.target_temp_low) and (tostring(a.target_temp_low) .. '~' .. tostring(a.target_temp_high))) or ''
+    extra = (H.num(a.current_temperature) and tostring(a.current_temperature) or '') .. ';' .. t .. ';' .. (H.str(a.hvac_action) or '')
   elseif dom == 'light' and tonumber(a.brightness) then extra = tostring(math.floor(tonumber(a.brightness) / 2.55 + 0.5))
   elseif dom == 'cover' and tonumber(a.current_position) then extra = tostring(a.current_position)
   elseif dom == 'media_player' and a.media_title then extra = tostring(a.media_title) end
@@ -294,7 +301,12 @@ function H.shown(row)
     return v, '', st ~= 'closed'
   end
   if dom == 'climate' then
-    return H.number(row.extra, '°') or cap(st), cap(st), st ~= 'off'
+    local cur, target, action = H.climate_extra(row.extra)
+    local v = H.number(cur, '°') or cap(st)
+    if st == 'off' then return v, 'Off', false end
+    local busy = action ~= '' and action ~= 'idle' and action ~= 'off'
+    if busy then return v, cap(action) .. (target and (' to ' .. target) or ''), true end
+    return v, cap(st) .. (target and (' · ' .. target) or ''), action == ''
   end
   if dom == 'media_player' then return cap(st), row.extra or '', st == 'playing' end
   if dom == 'scene' or dom == 'script' then return st == 'on' and 'Running' or 'Run', '', st == 'on' end
@@ -304,6 +316,18 @@ function H.shown(row)
   local n = H.number(st, row.unit)
   if n then return n, '', false end
   return cap(st), '', false
+end
+
+-- a thermostat row's extra "current;target;action" -> current, the target as text ("21°", "18-24°"), action;
+-- a cache from version 0.1 or 0.2 holds the current temperature alone
+function H.climate_extra(extra)
+  local cur, t, action = tostring(extra or ''):match('^([^;]*);([^;]*);(.*)$')
+  if not cur then return extra, nil, '' end
+  local lo, hi = t:match('^([^~]+)~(.+)$')
+  local target
+  if lo then target = (H.number(lo, '') or lo) .. '-' .. (H.number(hi, '°') or hi)
+  elseif t ~= '' then target = H.number(t, '°') or t end
+  return cur, target, action
 end
 
 -- what a tap does: domain, service, and a question to ask first (or nil); nil when nothing
