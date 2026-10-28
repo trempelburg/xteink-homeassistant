@@ -1,0 +1,4 @@
+cryptography    # packing: xtpack.py encrypts the package for the device
+lupa>=2.5       # tests: Lua 5.4 runtime; 2.5+ also brings the Lua 5.5 compile check
+jinja2          # tests: the stand-in Home Assistant renders the app's templates
+pillow          # only for tools/make_icon.py
