@@ -155,6 +155,10 @@ local SHAPES = {
   blind = function(P, C) P({ 3, 3, 25, 3 }); P({ 5, 8, 23, 8 }); P({ 5, 13, 23, 13 }); P({ 5, 18, 23, 18 }); P({ 14, 18, 14, 24 }); C(14, 25, 2) end,
   alert = function(P, C) P({ 14, 2, 27, 25, 1, 25, 14, 2 }); P({ 14, 9, 14, 17 }); C(14, 21, 1) end,
   dot = function(_P, C) C(14, 14, 7); C(14, 14, 2) end,
+  wifi_off = function(P, C)
+    P(arc(14, 23, 19, 225, 315, 15)); P(arc(14, 23, 13, 225, 315, 15)); P(arc(14, 23, 7, 225, 315, 30)); C(14, 24, 2)
+    P({ 3, 2, 25, 26 })
+  end,
 }
 
 -- an icon of kind in a box of size s at (x, y)

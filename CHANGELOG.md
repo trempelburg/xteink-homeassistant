@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4 (2026-10-28)
+
+- Lock screen: when the states are old because the reader had no Wi-Fi, a crossed-out Wi-Fi sign
+  shows in front of "updated ... ago", or Home Assistant's error is named. A row of tiles is only as tall as its contents: name and value alone take less room.
+- Battery: the lock screen waits longer after each try that got no answer (10 minutes up to
+  160) and lets Wi-Fi go right after a try. The panel stops asking every minute once it has been
+  left alone for ten minutes and lets Wi-Fi go; a touch asks again. Wi-Fi is kept up for two
+  minutes after a request instead of five. A finger going down or moving no longer redraws the
+  screen, and the minute's update redraws once instead of twice.
+
 ## 0.3 (2026-10-28)
 
 - Thermostats: the tile shows what the thermostat is doing and its target ("Heating to 21°",

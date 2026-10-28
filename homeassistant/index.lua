@@ -325,6 +325,10 @@ local SHAPES = {
   blind = function(P, C) P({ 3, 3, 25, 3 }); P({ 5, 8, 23, 8 }); P({ 5, 13, 23, 13 }); P({ 5, 18, 23, 18 }); P({ 14, 18, 14, 24 }); C(14, 25, 2) end,
   alert = function(P, C) P({ 14, 2, 27, 25, 1, 25, 14, 2 }); P({ 14, 9, 14, 17 }); C(14, 21, 1) end,
   dot = function(_P, C) C(14, 14, 7); C(14, 14, 2) end,
+  wifi_off = function(P, C)
+    P(arc(14, 23, 19, 225, 315, 15)); P(arc(14, 23, 13, 225, 315, 15)); P(arc(14, 23, 7, 225, 315, 30)); C(14, 24, 2)
+    P({ 3, 2, 25, 26 })
+  end,
 }
 
 -- an icon of kind in a box of size s at (x, y)
@@ -853,6 +857,8 @@ local TOP, TW, TH, GAP, VGAP, PER = 100, 222, 100, 12, 10, 10
 local QW, QH = 84, 56                  -- the quick-action corner of a tile (its switch or play button)
 local PICK_Y, PICK_H, PICK_ROWS = 100, 80, 7
 local STALE_S = 60
+local IDLE_S = 10 * 60             -- untouched this long: no more asking on its own, Wi-Fi may go
+local WIFI_MS = 2 * 60 * 1000       -- Wi-Fi kept up this long after a request (asks come every minute)
 local SHEET = { light = true, media_player = true, climate = true, cover = true }
 
 local cfg = H.parse_cfg(nil)
@@ -865,6 +871,7 @@ local sheet = nil               -- { id, d = the entity's state (GET /api/states
 local hits = {}                 -- the sheet's tap areas, made while drawing it
 local per_entity = false        -- the token may not use /api/template: one request per entity
 local status, busy_label, ERR = nil, nil, nil
+local touched = 0                -- when the app was last used (epoch seconds)
 
 local function now() local ok, t = pcall(function() return ctx.clock:now() end); return (ok and type(t) == 'table') and t or {} end
 local function now_sec() local t = now(); return tonumber(t.epoch_sec) and math.floor(tonumber(t.epoch_sec)) or 0 end
@@ -902,7 +909,7 @@ local pending, queued = nil, nil
 -- on_done(body, code, err): body is nil on failure
 local function send(opts, label, on_done)
   if pending then queued = { opts, label, on_done }; return true end
-  pcall(function() ctx.net:keep_wifi(5 * 60 * 1000) end)
+  pcall(function() ctx.net:keep_wifi(WIFI_MS) end)
   local job = {}
   pending, busy_label = job, label
   local ok, err = pcall(function()
@@ -1742,11 +1749,13 @@ end
 local long_done, suppress_up = false, false
 function on_input(c, ev)
   ERR = nil
+  touched = now_sec()
   local ok, e = pcall(function()
     if type(ev) ~= 'table' then return end
     if ev.type == 'pointer' then
       local x, y = ev.x or 0, ev.y or 0
-      if ev.phase == 'down' then long_done = false end
+      if ev.phase == 'down' then long_done = false; return false end
+      if ev.phase == 'move' then return false end
       if (ev.gesture == 'long' or ev.phase == 'hold') and not kit.modal() then
         if not long_done then tap(x, y, true) end
         long_done = true
@@ -1765,7 +1774,8 @@ function on_input(c, ev)
         end
       end
       tap(x, y, false)
-    elseif ev.type == 'key' and kit.key_accepted(ev) then
+    elseif ev.type == 'key' then
+      if not kit.key_accepted(ev) then return false end
       if kit.modal() then
         if ev.key == 'back' and kit.modal().cancel then kit.modal().cancel() end
       elseif ev.key == 'down' or ev.key == 'right' then turn(1)
@@ -1774,18 +1784,32 @@ function on_input(c, ev)
     end
   end)
   if not ok then ERR = tostring(e) end
+  if e == false then return true end     -- a finger going down or moving, a key let go: nothing to redraw
+  -- back from a while away: the states first
+  if ok and screen == 'main' and not pending and configured() and #tiles > 0 and now_sec() - (cache.updated or 0) >= STALE_S then
+    refresh('')
+  end
   kit.refresh()
   return true
 end
 
--- while the app is open it asks again every minute (an open sheet: its entity)
+-- while the app is in use it asks again every minute (an open sheet: its entity); the answer
+-- redraws, so the minute's redraw for the clock is that one. Left alone for IDLE_S (or under the
+-- lock screen) it only keeps the clock and lets Wi-Fi go; the next touch asks again.
+local idle = false
 function on_tick(c)
   pcall(function() ctx:set_tick(60000) end)
   local ok, e = pcall(function()
+    if now_sec() - touched >= IDLE_S then
+      if not idle then idle = true; pcall(function() ctx.net:keep_wifi(1) end) end
+      if screen == 'main' then kit.refresh() end
+      return
+    end
+    idle = false
     if pending or kit.modal() or not configured() then return end
-    if screen == 'main' and #tiles > 0 and now_sec() - (cache.updated or 0) >= STALE_S then refresh(''); kit.refresh()
-    elseif screen == 'sheet' and sheet and now_sec() - (sheet.at or 0) >= STALE_S then load_sheet(''); kit.refresh()
-    elseif screen == 'main' then kit.refresh() end          -- the clock in the header
+    if screen == 'main' and #tiles > 0 and now_sec() - (cache.updated or 0) >= STALE_S then refresh('')
+    elseif screen == 'sheet' and sheet and now_sec() - (sheet.at or 0) >= STALE_S then load_sheet('') end
+    if not pending and screen == 'main' then kit.refresh() end   -- no question went out: the clock
   end)
   if not ok then ERR = tostring(e) end
 end
@@ -1793,6 +1817,7 @@ end
 function on_load(c)
   local ok, e = pcall(function()
     load_all()
+    touched = now_sec()
     if not configured() then screen = 'setup'
     elseif now_sec() - (cache.updated or 0) >= STALE_S then refresh() end
   end)

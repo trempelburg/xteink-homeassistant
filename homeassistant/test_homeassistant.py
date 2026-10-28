@@ -423,6 +423,11 @@ assert len(requests) == n + 1
 later(31)
 g.L.eval('on_tick')(ctx)
 assert len(requests) == n + 2; answer_now()
+later(11 * 60)                                             # left alone: no more asking, only the clock
+g.L.eval('on_tick')(ctx)
+assert len(requests) == n + 2
+swipe('left'); assert len(requests) == n + 3; answer_now()   # a touch asks again
+swipe('right')
 
 # ---- a token that may not render templates: one entity at a time
 mode['admin'] = False
@@ -461,7 +466,7 @@ L2.execute(open(os.path.join(HERE, 'lockscreen.lua'), encoding='utf-8').read())
 draw2 = L2.eval("function() drawn, commands = {}, 0; on_draw(ctx, gg); local t = {} for _, d in ipairs(drawn) do t[#t + 1] = d.s end return t end")
 n = len(requests)
 t = list(draw2().values())
-for s in ['Home', 'Monday, 27 October', '12:09', 'Kitchen ceili~', 'Front door lo~', 'Unlocked', 'Front door', 'Open', '21.5°C', '20.5°',
+for s in ['Home', 'Monday, 27 October', '12:20', 'Kitchen ceili~', 'Front door lo~', 'Unlocked', 'Front door', 'Open', '21.5°C', '20.5°',
           'updated 5 min ago']:
     assert s in t, (s, t)
 assert 'Kettle' not in t                                   # pinned tiles only
@@ -476,6 +481,42 @@ assert len(requests) == n + 1                              # asked once, not on 
 answer2()
 t = list(draw2().values())
 assert 'updated 0 min ago' in t and 'Locked' in t and not any('Front door lock (' in s for s in t), t
+
+# no answer while locked (Wi-Fi off): it says so and tries less and less often
+L2.execute("now_sec = now_sec + 11 * 60")
+n = len(requests)
+age_x = lambda s: [d.x for d in L2.globals().drawn.values() if str(d.s) == s]
+draw2()
+assert len(requests) == n + 1 and age_x('updated 11 min ago') == [24]         # just asked
+L2.execute("now_sec = now_sec + 60")
+draw2()
+assert age_x('updated 12 min ago') == [58] and len(requests) == n + 1         # the Wi-Fi off sign in front
+L2.execute("now_sec = now_sec + 10 * 60"); draw2()
+assert len(requests) == n + 2                              # again after 10 minutes
+L2.execute("now_sec = now_sec + 11 * 60"); draw2()
+assert len(requests) == n + 2                              # then waits 20
+L2.execute("now_sec = now_sec + 10 * 60"); draw2()
+assert len(requests) == n + 3
+mode['fail'] = True                                        # an answer, but an error
+L2.execute("now_sec = now_sec + 40 * 60"); draw2(); answer2()
+L2.execute("now_sec = now_sec + 60")
+t = list(draw2().values())
+assert len(requests) == n + 4 and any(s.endswith('· HA error 502') for s in t), t
+mode['fail'] = False
+L2.execute("now_sec = now_sec + 80 * 60"); draw2(); answer2()
+t = list(draw2().values())
+assert len(requests) == n + 5 and 'updated 0 min ago' in t, t
+# a row of two-line tiles is lower than one with a third line
+L2.globals().store['tiles.txt'] = '*sensor.power\n*switch.kitchen_kettle\n*sensor.kitchen_temperature\n*climate.living_room\n'
+L2.execute("polys = {}; local pl = gg.polyline; gg.polyline = function(self, t) polys[#polys + 1] = t; return pl(self, t) end")
+draw2()
+frames = {}
+for p in L2.globals().polys.values():
+    v = list(p.values())
+    if len(v) == 34:                                       # a rounded frame
+        xs, ys = v[0::2], v[1::2]
+        if max(xs) - min(xs) == 210: frames.setdefault(min(ys), max(ys) - min(ys))
+assert sorted(frames.items()) == [(108, 96), (216, 118)], frames
 L3 = lua54.LuaRuntime(unpack_returned_tuples=True)          # nothing saved yet
 L3.execute(STUBS)
 L3.execute(open(os.path.join(HERE, 'lockscreen.lua'), encoding='utf-8').read())

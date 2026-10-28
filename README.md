@@ -109,8 +109,10 @@ Or write the list yourself in `tiles.txt` (see [Files on the SD card](#files-on-
 - **Tap** a tile as in the table above. Covers, locks and anything that is not a toggle never act
   by accident: locks ask first, covers and lights' colours are on their own screen.
 - **Long press** a tile to move it back or on, rename it, pin it to the lock screen, or remove it.
-- **Refresh** asks Home Assistant now. While the panel is open it also asks every minute; "updated
-  hh:mm" at the bottom says when it last did, "(old)" when that is over ten minutes ago.
+- **Refresh** asks Home Assistant now. While you use the panel it also asks every minute; "updated
+  hh:mm" at the bottom says when it last did, "(old)" when that is over ten minutes ago. Left
+  untouched for ten minutes (or under the lock screen) it stops asking and lets Wi-Fi switch off to
+  save the battery; the next touch asks again.
 - **Setup** changes the address, the token or the title.
 - **Lock** / **Lock off**: see [the lock screen](#the-lock-screen).
 
@@ -141,13 +143,17 @@ and the fan modes of an air conditioner; the active one has a heavy frame.
 Settings → Display the "Off wallpaper" must be **Default**). It shows:
 
 - the time and date, redrawn every minute;
-- up to eight tiles: the ones you pinned (long press → **Pin to lock**, or a `*` in `tiles.txt`),
+- up to eight tiles, each row only as tall as its contents need: the ones you pinned (long press → **Pin to lock**, or a `*` in `tiles.txt`),
   or, when none is pinned, the first eight;
 - a box listing every open door or window, water or smoke alarm, unlocked lock and open garage
   among **all** tiles, or "All doors and windows closed."
 
-When the states are older than ten minutes the lock screen asks Home Assistant again, if the reader
-lets a locked app use the network; "updated ... min ago" at the bottom tells you how fresh they are.
+When the states are older than ten minutes the lock screen asks Home Assistant again;
+"updated ... min ago" at the bottom tells you how fresh they are. A sleeping reader usually has
+Wi-Fi off, so the question gets no answer: a crossed-out Wi-Fi sign then appears in front of
+"updated 3 h ago" (or a warning sign and "HA error 401" and the like when Home Assistant answered
+with an error). Every try wakes Wi-Fi for a few seconds, so after a try with no answer it waits
+longer: 10, 20, 40, 80, then 160 minutes. Opening the app brings the states up to date at once.
 **Lock off** gives the lock screen back to the firmware.
 
 ## Files on the SD card
@@ -159,6 +165,7 @@ All in `XTApps/homeassistant/files/`, plain text you can edit on a computer:
 | `ha.txt` | `url=`, `token=`, `title=`, `lock=` (true while the app is the lock screen) |
 | `tiles.txt` | the tiles, in order: one entity a line |
 | `states.txt` | the last states, so the panel and the lock screen open at once; written by the app |
+| `lockstate.txt` | when the lock screen last asked and how many tries got no answer |
 
 `tiles.txt`:
 
