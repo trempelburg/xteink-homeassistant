@@ -37,12 +37,6 @@ local touched = 0                -- when the app was last used (epoch seconds)
 
 local function now() local ok, t = pcall(function() return ctx.clock:now() end); return (ok and type(t) == 'table') and t or {} end
 local function now_sec() local t = now(); return tonumber(t.epoch_sec) and math.floor(tonumber(t.epoch_sec)) or 0 end
-local function hhmm(epoch)
-  local t = now()
-  if not epoch or not tonumber(t.hour) then return '' end
-  local wall = (tonumber(t.hour) * 3600 + (tonumber(t.minute) or 0) * 60 - (now_sec() - epoch)) % 86400
-  return string.format('%02d:%02d', wall // 3600, (wall % 3600) // 60)
-end
 local function configured() return cfg.url ~= '' and cfg.token ~= '' end
 local function pages() return math.max(1, (#tiles + PER - 1) // PER) end
 local function cap(s) s = tostring(s or ''):gsub('_', ' '); return (s:gsub('^%l', string.upper)) end
@@ -168,36 +162,60 @@ local function load_sheet(label)
   end)
 end
 
--- a service call answers with the states it changed: those tiles (and the sheet) take them at once
-local function apply_changed(body)
+-- a service call answers with the states it changed: those tiles (and the sheet) take them at once,
+-- all but skip's; returns how many it took and skip's state as answered (or nil)
+local function apply_changed(body, skip)
   local okj, list = pcall(function() return ctx.json:decode(body) end)
-  local rows, n = {}, 0
+  local rows, n, skipped = {}, 0, nil
   if okj and type(list) == 'table' then
     for _k, d in ipairs(list) do
       local r = H.row_from_state(d)
-      if r and (cache.rows[r.id] or (sheet and sheet.id == r.id)) then rows[r.id] = r; n = n + 1 end
-      if r and sheet and sheet.id == r.id then sheet.d, sheet.at = d, now_sec() end
+      if r and r.id == skip then skipped = d
+      elseif r then
+        if cache.rows[r.id] or (sheet and sheet.id == r.id) then rows[r.id] = r; n = n + 1 end
+        if sheet and sheet.id == r.id then sheet.d, sheet.at = d, now_sec() end
+      end
     end
   end
   if n > 0 then store_rows(rows) end
-  return n
+  return n, skipped
 end
 
--- id's service; the state changes on the screen at once (guess), the answer has the last word
-local function call(id, svc, data, label, guess)
+local RECHECK_MS = 3000
+local calls = {}                -- entity id -> the number of its latest call
+
+-- id's service; the state changes on the screen at once (guess), the answer has the last word.
+-- Two exceptions keep a slider from jumping back: the answer to a tap that a later tap on the same
+-- entity has overtaken is not shown (the later answer is), and when check(attributes) says the
+-- answer does not have the change yet (a light still dimming, a speaker that reports late), the
+-- guess stays and the sheet asks again a few seconds later.
+local function call(id, svc, data, label, guess, check)
   local dom = H.domain(id)
   local old_row = cache.rows[id]
+  local n = (calls[id] or 0) + 1
+  calls[id] = n
   if guess then guess() end
   send(H.service_request(cfg, id, dom, svc, data), label or (cap(svc) .. '...'), function(body, code, err)
+    local latest = calls[id] == n
     if not body then
-      if old_row then cache.rows[id] = old_row end
       status = 'Failed: ' .. err
-      if sheet and sheet.id == id then load_sheet() end
+      if latest then
+        if old_row then cache.rows[id] = old_row end
+        if sheet and sheet.id == id then load_sheet() end
+      end
       return
     end
-    if apply_changed(body) == 0 then
-      if sheet and sheet.id == id then load_sheet('') else refresh('') end
-    end
+    local _n, d = apply_changed(body, id)
+    if not latest then return end
+    local on_sheet = sheet and sheet.id == id
+    if d and on_sheet and check and not check(type(d.attributes) == 'table' and d.attributes or {}) then
+      sheet.recheck = true
+      pcall(function() ctx:set_tick(RECHECK_MS) end)
+    elseif d then
+      local r = H.row_from_state(d)
+      store_rows({ [id] = r })
+      if on_sheet then sheet.d, sheet.at = d, now_sec() end
+    elseif on_sheet then load_sheet('') else refresh('') end
   end)
 end
 
@@ -254,7 +272,7 @@ local function info(i)
   local row = cache.rows[t.id]
   local v, sub = H.shown(row)
   local lines = { v .. (sub ~= '' and ('  ' .. sub) or ''), t.id }
-  if cache.updated then lines[#lines + 1] = 'updated ' .. hhmm(cache.updated) end
+  if cache.updated then lines[#lines + 1] = H.ago(now_sec() - cache.updated) end
   kit.show({ title = H.label(t, row), lines = lines,
              rows = { { { 'Edit tile', function() edit_tile(i) end }, { 'Close', kit.close } } }, cancel = kit.close })
 end
@@ -511,15 +529,19 @@ local function draw_light(gg)
   local y = 196
   if m.brightness then
     section(gg, y, 'Brightness', on and (pct .. '%') or 'off')
-    local xs, sw = D.segments(gg, 20, y + 36, W - 40, 58, 10, (pct + 5) // 10)
+    local xs, sw = D.segments(gg, 20, y + 36, W - 40, 58, 10, pct > 0 and math.max(1, (pct + 5) // 10) or 0)
+    local function is(p) return function(aa) return H.num(aa.brightness) ~= nil and math.abs(aa.brightness / 2.55 - p) <= 1.5 end end
     for k = 1, 10 do
       hit(xs[k], y + 36, sw, 58, 'b' .. (k * 10), function()
         call(id, 'turn_on', { brightness_pct = k * 10 }, 'Brightness ' .. (k * 10) .. '%...',
-             guess(function(d, aa) d.state = 'on'; aa.brightness = k * 25.5 end))
+             guess(function(d, aa) d.state = 'on'; aa.brightness = k * 25.5 end), is(k * 10))
       end)
     end
     local bw = (W - 40 - 3 * 8) // 4
-    local steps = { { 'minus', math.max(1, pct - 10) }, { 'Night', 5 }, { 'Max', 100 }, { 'plus', math.min(100, pct + 10) } }
+    -- − / + go to the next ten down or up (65% -> 60% / 70%), as the bar shows tens
+    local down = math.max(1, pct % 10 == 0 and pct - 10 or pct - pct % 10)
+    local up = math.min(100, pct - pct % 10 + 10)
+    local steps = { { 'minus', down }, { 'Night', 5 }, { 'Max', 100 }, { 'plus', up } }
     for k, s in ipairs(steps) do
       local bx = 20 + (k - 1) * (bw + 8)
       local glyph = s[1] == 'minus' or s[1] == 'plus'
@@ -527,7 +549,7 @@ local function draw_light(gg)
       if glyph then D.glyph(gg, s[1], bx + bw / 2, y + 133, 26) end
       hit(bx, y + 106, bw, 54, s[1], function()
         call(id, 'turn_on', { brightness_pct = s[2] }, 'Brightness ' .. s[2] .. '%...',
-             guess(function(d, aa) d.state = 'on'; aa.brightness = s[2] * 2.55 end))
+             guess(function(d, aa) d.state = 'on'; aa.brightness = s[2] * 2.55 end), is(s[2]))
       end)
     end
     y = y + 186
@@ -619,6 +641,7 @@ local function draw_media(gg)
   local vol = H.num(a.volume_level)
   local muted = a.is_volume_muted == true
   local can_set = H.has(f, H.MP.VOLUME_SET)
+  local function is(v) return function(aa) return H.num(aa.volume_level) ~= nil and math.abs(aa.volume_level - v) < 0.02 end end
   y = 462
   section(gg, y, 'Volume', vol and (muted and 'muted' or (math.floor(vol * 100 + 0.5) .. '%')) or nil)
   if H.has(f, H.MP.VOLUME_MUTE) then
@@ -633,7 +656,7 @@ local function draw_media(gg)
     for k = 1, 10 do
       hit(xs[k], y + 40, sw, 56, 'v' .. (k * 10), function()
         call(id, 'volume_set', { volume_level = k / 10 }, 'Volume ' .. (k * 10) .. '%...',
-             guess(function(_d, aa) aa.volume_level = k / 10; aa.is_volume_muted = false end))
+             guess(function(_d, aa) aa.volume_level = k / 10; aa.is_volume_muted = false end), is(k / 10))
       end)
     end
   end
@@ -643,7 +666,7 @@ local function draw_media(gg)
     if can_set and vol then
       local v = math.max(0, math.min(1, math.floor(vol * 20 + 0.5 + dir) / 20))
       call(id, 'volume_set', { volume_level = v }, 'Volume ' .. math.floor(v * 100 + 0.5) .. '%...',
-           guess(function(_d, aa) aa.volume_level = v end))
+           guess(function(_d, aa) aa.volume_level = v end), is(v))
     else
       call(id, dir > 0 and 'volume_up' or 'volume_down', nil, dir > 0 and 'Louder...' or 'Quieter...')
     end
@@ -836,7 +859,7 @@ function on_draw(c, gg)
     if line and line ~= '' then
       D.text(gg, 20, screen == 'sheet' and (H_ - 60) or (BTN_Y - 34), kit.short(line, 48), 'small')
     elseif screen == 'main' and cache.updated then
-      D.text(gg, 20, BTN_Y - 34, 'updated ' .. hhmm(cache.updated) .. (now_sec() - cache.updated > 10 * 60 and ' (old)' or ''), 'small')
+      D.text(gg, 20, BTN_Y - 34, H.ago(now_sec() - cache.updated), 'small')
     end
     local bs = buttons()
     for k, b in ipairs(bs) do
@@ -977,6 +1000,12 @@ function on_tick(c)
       return
     end
     idle = false
+    if screen == 'sheet' and sheet and sheet.recheck then
+      if pending then pcall(function() ctx:set_tick(RECHECK_MS) end); return end
+      sheet.recheck = nil
+      load_sheet('')
+      return
+    end
     if pending or kit.modal() or not configured() then return end
     if screen == 'main' and #tiles > 0 and now_sec() - (cache.updated or 0) >= STALE_S then refresh('')
     elseif screen == 'sheet' and sheet and now_sec() - (sheet.at or 0) >= STALE_S then load_sheet('') end

@@ -42,7 +42,7 @@ for k in range(9):
     DB[f'sensor.room_{k}'] = [str(18 + k), {'friendly_name': f'Room {k}', 'unit_of_measurement': '°C'}]
 
 requests = []
-mode = {'admin': True, 'fail': False, 'echo': True}
+mode = {'admin': True, 'fail': False, 'echo': True, 'lag': False}
 
 
 class St:
@@ -90,6 +90,7 @@ def answer(o):
         eid = data['entity_id']
         assert eid.startswith(dom + '.'), (eid, dom)
         a = DB[eid][1]
+        before = json.loads(json.dumps(state_json(eid)))  # 'lag': the answer still has the old state
         if svc == 'turn_on' and dom == 'light':
             DB[eid][0] = 'on'
             if 'brightness_pct' in data: a['brightness'] = round(data['brightness_pct'] * 2.55)
@@ -113,7 +114,7 @@ def answer(o):
         elif svc == 'set_fan_mode': a['fan_mode'] = data['fan_mode']
         elif svc == 'set_cover_position': a['current_position'] = data['position']; DB[eid][0] = 'open' if data['position'] else 'closed'
         if svc not in ('toggle', 'unlock', 'lock', 'open', 'open_cover', 'close_cover'):
-            return {'status': 200, 'body': json.dumps([state_json(eid)] if mode['echo'] else [])}
+            return {'status': 200, 'body': json.dumps([before if mode['lag'] else state_json(eid)] if mode['echo'] else [])}
         new = {'toggle': {'on': 'off', 'off': 'on'}.get(DB[eid][0]), 'unlock': 'unlocked', 'lock': 'locked', 'open': 'open',
                'open_cover': 'open', 'close_cover': 'closed'}.get(svc)
         if new:
@@ -321,6 +322,22 @@ answer_now()
 assert 'On, 30% brightness' in g.texts() and DB['light.kitchen'][1]['brightness'] == 76
 hit('plus'); assert body()['brightness_pct'] == 40; answer_now()
 hit('Night'); assert body()['brightness_pct'] == 5; answer_now()
+hit('plus'); assert body()['brightness_pct'] == 10; answer_now()        # − / + go to the tens
+hit('plus'); assert body()['brightness_pct'] == 20; answer_now()
+hit('minus'); assert body()['brightness_pct'] == 10; answer_now()
+mode['lag'] = True                                                      # an answer without the change yet
+hit('plus'); answer_now()
+assert 'On, 20% brightness' in g.texts(), g.texts()                     # the bar does not jump back
+g.L.eval('on_tick')(ctx)
+assert requests[-1]['url'].endswith('/api/states/light.kitchen'); answer_now()
+mode['lag'] = False
+assert 'On, 20% brightness' in g.texts()
+hit('plus'); hit('plus')                                                # quick taps: 30, then 40 waits
+assert body()['brightness_pct'] == 30
+answer_now()                                                            # 30's answer: overtaken, not shown
+assert body()['brightness_pct'] == 40 and 'On, 40% brightness' in g.texts(), g.texts()
+answer_now()
+assert 'On, 40% brightness' in g.texts() and DB['light.kitchen'][1]['brightness'] == 102
 hit('Daylight'); assert body() == {'entity_id': 'light.kitchen', 'color_temp_kelvin': 6000}; answer_now()
 assert '6000 K' in g.texts()
 hit('Warm'); assert body()['color_temp_kelvin'] == 2700; answer_now()
@@ -493,7 +510,7 @@ draw2(); draw2()
 assert len(requests) == n + 1                              # asked once, not on every draw
 answer2()
 t = list(draw2().values())
-assert 'updated 0 min ago' in t and 'Front door lo~' in t and 'Locked' in t and not any('Front door lock (' in s for s in t), t
+assert 'updated just now' in t and 'Front door lo~' in t and 'Locked' in t and not any('Front door lock (' in s for s in t), t
 
 # no answer while locked (Wi-Fi off): it says so and tries less and less often
 L2.execute("now_sec = now_sec + 11 * 60")
@@ -518,7 +535,7 @@ assert len(requests) == n + 4 and any(s.endswith('· HA error 502') for s in t),
 mode['fail'] = False
 L2.execute("now_sec = now_sec + 80 * 60"); draw2(); answer2()
 t = list(draw2().values())
-assert len(requests) == n + 5 and 'updated 0 min ago' in t, t
+assert len(requests) == n + 5 and 'updated just now' in t, t
 # a row of two-line tiles is lower than one with a third line
 L2.globals().store['tiles.txt'] = '*sensor.power\n*switch.kitchen_kettle\n*sensor.kitchen_temperature\n*climate.living_room\n'
 L2.execute("polys = {}; local pl = gg.polyline; gg.polyline = function(self, t) polys[#polys + 1] = t; return pl(self, t) end")

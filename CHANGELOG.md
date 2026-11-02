@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6 (2026-11-02)
+
+- Brightness and volume bars no longer jump: the answer to a tap that a quicker tap has overtaken
+  is not shown, and an answer without the change yet (a light still dimming) keeps your choice on
+  the screen while the app asks again three seconds later. − / + on a light go to the next ten
+  (65% -> 60% / 70%), and a light at 1-4% shows one segment instead of none.
+- The panel says how fresh its states are as the lock screen does: "updated just now",
+  "updated 12 min ago", "updated 3 h ago" (also on the lock screen, which said "0 min ago").
+
 ## 0.5 (2026-10-28)
 
 - Locks that can unlatch the door (a Nuki, or any lock whose Home Assistant entity supports

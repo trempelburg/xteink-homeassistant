@@ -28,7 +28,7 @@ reader's own file browser.
 
 | entity | on the tile | a tap | its controls |
 |---|---|---|---|
-| light | on / off, brightness bar | the switch toggles; the rest opens the controls | brightness in ten steps, − / Night / Max / +, warmth (Warm, Soft, Neutral, Daylight), eight colours, as far as the light supports them |
+| light | on / off, brightness bar | the switch toggles; the rest opens the controls | brightness in ten steps, − / Night / Max / + (to the next ten down or up), warmth (Warm, Soft, Neutral, Daylight), eight colours, as far as the light supports them |
 | media player (smart speaker, TV) | state, what is playing | the button plays / pauses; the rest opens the controls | previous / play-pause / next, volume in ten steps and − / +, mute, source (Spotify, TV, ...), on / off, as far as the player supports them |
 | climate (thermostat, radiator valve, air conditioner) | current temperature; heating / cooling and the target | opens the controls | target temperature − / + (or the low and high ends of a heat/cool range), the modes (heat, cool, heat/cool, auto, off, ...), presets (eco, comfort, away, boost, ...), fan modes; current humidity |
 | cover (blinds, garage door) | open / closed and position | opens the controls | open, stop, close, position in ten steps |
@@ -109,8 +109,9 @@ Or write the list yourself in `tiles.txt` (see [Files on the SD card](#files-on-
 - **Tap** a tile as in the table above. Covers, locks and anything that is not a toggle never act
   by accident: locks ask first, covers and lights' colours are on their own screen.
 - **Long press** a tile to move it back or on, rename it, pin it to the lock screen, or remove it.
-- **Refresh** asks Home Assistant now. While you use the panel it also asks every minute; "updated
-  hh:mm" at the bottom says when it last did, "(old)" when that is over ten minutes ago. Left
+- **Refresh** asks Home Assistant now. While you use the panel it also asks every minute; the line
+  at the bottom says how fresh the states are ("updated just now", "updated 12 min ago",
+  "updated 3 h ago"), as on the lock screen. Left
   untouched for ten minutes (or under the lock screen) it stops asking and lets Wi-Fi switch off to
   save the battery; the next touch asks again.
 - **Setup** changes the address, the token or the title.
@@ -122,7 +123,9 @@ A tap on such a tile (outside its switch or play button; the `›` marks these t
 controls. **Back** at the top left, the Back side button or a swipe to the right returns to the
 panel. A change shows at once and is confirmed by Home Assistant's answer a moment later; if it
 fails, the screen says so and shows the real state again. Several quick taps (volume up, up, up)
-are not lost: the latest one is sent as soon as the one before is done.
+are not lost: the latest one is sent as soon as the one before is done, and the bar does not jump
+back to an earlier tap in between. When a light or speaker answers before it has caught up (a
+light still dimming), the bar keeps what you chose and the app asks again three seconds later.
 
 Only the controls an entity supports are shown or active: a plain on/off bulb has no brightness, a
 speaker that cannot be switched off has no Turn off.

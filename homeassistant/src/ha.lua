@@ -375,6 +375,13 @@ function H.alert(row)
   return false
 end
 
+-- how old the states are: "updated just now", "updated 12 min ago", "updated 3 h ago"
+function H.ago(age)
+  local mins = math.max(0, age or 0) // 60
+  if mins < 1 then return 'updated just now' end
+  return mins < 90 and ('updated ' .. mins .. ' min ago') or ('updated ' .. (mins // 60) .. ' h ago')
+end
+
 function H.label(tile, row)
   return tile.label or (row and row.name ~= '' and row.name) or tile.id
 end
