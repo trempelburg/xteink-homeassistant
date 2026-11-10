@@ -274,8 +274,8 @@ ghost on e-ink.
 - **Firmware-bound.** Packages are encrypted for a key that XTOS Licorice carries; it worked on
   build 26102301 (October 2026). If an update rotates the key, packages stop installing until
   rebuilt (`python build.py --image <app image>`, see `xtpack.py`).
-- **Tested so far:** version 0.1 on an X4 Pro; versions 0.2 and 0.3 (the new design, the controls, thermostats) only
-  with the offline tests. Other Xteink models are untested.
+- **Tested on an X4 Pro:** version 0.6 (the latest) is installed and in use there. Other Xteink models are
+  untested.
 - **Network.** The app talks only to the address you enter.
 
 ## License and credits
