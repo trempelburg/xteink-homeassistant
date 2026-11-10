@@ -8,6 +8,9 @@ screen.
 No custom firmware and no flashing: you copy one file to the SD card and install it from the
 reader's own file browser.
 
+**[Download the latest release](https://github.com/trempelburg/xteink-homeassistant/releases/latest)**
+(`homeassistant.xtapp`), then follow [Install](#install).
+
 ![The panel, a light's controls, a speaker's controls and the lock screen](docs/screens.png)
 
 *From left to right: the panel, a light's controls, a speaker's controls, the lock screen.*
